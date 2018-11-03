@@ -22,7 +22,8 @@ import GestureRecognizer, {
   swipeDirections
 } from "react-native-swipe-gestures";
 
-import {getRandomInt,checkRowsForMatch,checkColsForMatch,getAllMatches,markAsMatch,condenseColumns} from "../lib/GridApi"
+import {getRandomInt,checkRowsForMatch,checkColsForMatch,
+  getAllMatches,markAsMatch,condenseColumns,flattenArrayToPairs} from "../lib/GridApi"
 import {BEAN_OBJS} from "../lib/Images"
 import {TileData} from "../lib/TileData"
 import Tile from "./Tile";
@@ -33,18 +34,19 @@ export default class SwappableGrid extends Component<{}> {
     super(props);
 
     this.state = {
-      tileDataSource: this.initializeDataSource()
+      tileDataSource: this.initializeDataSource(),
     };
   }
 
   swap(i,j,dx,dy){
 
-    let newData = this.state.tileDataSource
-
     const swapStarter = this.state.tileDataSource[i][j];
     const swapEnder = this.state.tileDataSource[i + dx][j + dy];
 
-    Animated.parallel([
+    this.state.tileDataSource[i][j] = swapEnder;
+    this.state.tileDataSource[i+dx][j+dy] = swapStarter;
+
+    const animateSwap = Animated.parallel([
       Animated.timing(swapStarter.location, {
         toValue: {x: TILE_WIDTH*(i+dx),y: TILE_WIDTH*(j+dy)},
         duration: 120,
@@ -55,36 +57,52 @@ export default class SwappableGrid extends Component<{}> {
         duration: 120,
         useNativeDriver: true
       }),
-    ]).start()
+    ])
+
+    animateSwap.start(()=> {
+        let allMatches = getAllMatches(this.state.tileDataSource)
+        if (allMatches.length != 0) {
+          this.processMatches(allMatches)
+        }})
+  }
 
 
-    newData[i][j] = swapEnder;
-    newData[i+dx][j+dy] = swapStarter;
+  processMatches(matches) {
 
-    let allMatches = getAllMatches(newData)
-    console.log("allMatches",allMatches)
-    console.log("allMatches.length",allMatches.length)
+      let nextMatches = []
 
-    setTimeout(() => {
-      if (allMatches.length != 0) {
-        markAsMatch(allMatches,newData)
+      this.setState((state => {
+      // Create a copy to our existing tileDataSource
+      let newTileDataSource = state.tileDataSource.slice()
+      // Mark matches for update.
+      markAsMatch(matches,newTileDataSource)
+      // Repositioning tiles marked for update.
+      condenseColumns(newTileDataSource)
+      // Recoloring those tiles & reseting update status.
+      this.recolorMatches(newTileDataSource)
+      // Get the matches from our new state.
+      nextMatches = getAllMatches(newTileDataSource)
+      //
+      return {tileDataSource: newTileDataSource}}),()=>{this.animateValuesToLocations()})
 
-        condenseColumns(newData)
-
-       this.animateValuesToLocations()
-
-     }},250)
-
-
+      // If the matches
+      if (nextMatches.length != 0) {
+        setTimeout(()=>{this.processMatches(nextMatches)},250)
+      }
+  }
 
 
-    console.log("allMatches",allMatches)
-
-
-
-    this.setState({tileDataSource: newData})
-
-    //
+  recolorMatches(tileData) {
+    tileData.forEach(row => {
+      row.forEach(e=> {
+      if (e.markedAsMatch == true){
+        let randIndex = getRandomInt(7);
+        let randomBeanObj = BEAN_OBJS[randIndex]
+        e.markedAsMatch = false
+        e.imgObj = randomBeanObj
+      }
+    })
+    });
   }
 
   onSwipe(gestureName, gestureState) {
@@ -94,37 +112,31 @@ export default class SwappableGrid extends Component<{}> {
       let initialGestureX = gestureState.x0;
       let initialGestureY = gestureState.y0;
 
-      console.log("initialGestureX/Y",initialGestureX,initialGestureY)
-
       let i = Math.round((initialGestureX - this.gridOrigin[0] - 0.5 * TILE_WIDTH) / TILE_WIDTH);
       let j = Math.round((initialGestureY - this.gridOrigin[1] - 0.5 * TILE_WIDTH) / TILE_WIDTH);
-
-      console.log("i,j",i,j)
-
+      
       switch (gestureName) {
         case SWIPE_UP:
-          console.log("SWIPE_UP")
           this.swap(i,j,0,-1)
           break;
         case SWIPE_DOWN:
-          console.log("SWIPE_DOWN")
           this.swap(i,j,0,1)
           break;
         case SWIPE_LEFT:
-          console.log("SWIPE_LEFT")
           this.swap(i,j,-1,0)
           break;
         case SWIPE_RIGHT:
-          console.log("SWIPE_RIGHT")
           this.swap(i,j,1,0)
           break;
       }
   }
 
+
   // SwappableGrid.js
-renderTiles(tileDataSource) {
+renderTiles(tileData) {
+    console.log("Render Tiles Called")
     let tiles = [];
-    tileDataSource.forEach((row, i) => {
+    tileData.forEach((row, i) => {
       let rows = row.forEach((e, j) => {
        // e is a singular TileData class.
         tiles.push(
@@ -170,7 +182,6 @@ renderTiles(tileDataSource) {
     this.gridOrigin = [event.nativeEvent.layout.x, event.nativeEvent.layout.y];
   }
 
-
   // Animates the values in the tile data source based on their index in the array.
   animateValuesToLocations() {
     this.state.tileDataSource.forEach((row, i) => {
@@ -183,8 +194,6 @@ renderTiles(tileDataSource) {
       });
     });
   }
-
-
 
   render() {
 
