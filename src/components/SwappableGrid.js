@@ -114,7 +114,7 @@ export default class SwappableGrid extends Component<{}> {
 
       let i = Math.round((initialGestureX - this.gridOrigin[0] - 0.5 * TILE_WIDTH) / TILE_WIDTH);
       let j = Math.round((initialGestureY - this.gridOrigin[1] - 0.5 * TILE_WIDTH) / TILE_WIDTH);
-      
+
       switch (gestureName) {
         case SWIPE_UP:
           this.swap(i,j,0,-1)
